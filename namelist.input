@@ -1,0 +1,6 @@
+$testvars
+   npoints = 10
+   ndims = 2
+   lrange = -50
+   urange = 50
+/
