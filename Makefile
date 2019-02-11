@@ -3,7 +3,7 @@ ifeq ($(FC),gfortran)
 endif
 
 ifeq ($(FC),ifort)
-	FFLAGS= -g
+	FFLAGS= -g -fcheck=all
 endif
 
 OMP = -fopenmp

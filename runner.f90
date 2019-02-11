@@ -32,7 +32,7 @@ program mpas_kd_tester
             call test1(npoints, ndims, lrange, urange)
          case ('2')
             write(0,*) "Launching test 2"
-            call test2(ndims, lrange, urange)
+            call test2(npoints, ndims, lrange, urange)
          case ('3')
             write(0,*) "Launching test 3"
          case ('4')
@@ -59,72 +59,90 @@ subroutine test1(npoints, ndims, lrange, urange)
    type (kdnode), pointer :: iTree, rTree
 
 
-   ! Integer Test
-   call random_number(r_points)
-   call random_number(rpsr)
-   i_points = int(r_points(:,:) * (urange + 1 - lrange)) + lrange
-   ipsr = int(rpsr(:,:) * (urange + 1 - lrange)) + lrange
-   ips = i_points
-   write(0,*) ""
-   write(0,*) "=================="
-   write(0,*) "Integer Test:"
-   write(0,*) " Integer Shape: ", shape(i_points), " nElms: ", size(i_points)
-   !write(0,*) " Integer Points: ", i_points
-   write(0,*) ""
-
-   write(0,*) "Constructing KD Tree of Integer Type..."
-   iTree => mpas_kd_construct(i_points)
-   write(0,*) "Finished mpas_kd_constrcut of an integer tree"
-
-   write(0,*) "Searching for points..."
-   i = mpas_kd_search(iTree, i_points(:,1), 1)
-   write(0,*) "Finished mpas_kd_search of an integer points"
-   
-
-
-   ! Real Test
-   call random_number(r_points)
-   r_points = (r_points(:,:) * (urange + 1 - lrange)) + lrange
-   rpsr = (r_points(:,:) * (urange + 1 - lrange)) + lrange
-   rps = r_points
-   write(0,*) ""
-   write(0,*) "=================="
-   write(0,*) "Real Test:"
-   write(0,*) " Real Shape: ", shape(r_points), " nElms: ", size(r_points)
-   write(0,*) ""
-
-   rTree => mpas_kd_construct(r_points)
-
 end subroutine test1
 
-subroutine test2(ndims, lrange, urange)
+subroutine test2(npoints, ndims, lrange, urange)
 
    implicit none
-   integer, intent(in), value :: ndims
+   integer, intent(in), value :: npoints, ndims
    integer, intent(in), value :: lrange, urange
 
-   real, dimension(ndims) :: arry1, arry2
+   type(kdnode), pointer :: rTree => null()
+   real, dimension(ndims, npoints) :: arry1, arry2
+   real, dimension(ndims) :: result
+   real :: min_d
 
-   real :: distance
+   integer :: i, r, k, n
+   
+   min_d = huge(min_d)
 
+   write(0,*) "Real test: "
    call random_number(arry1)
    call random_number(arry2)
 
-   arry1 = (arry1(:) * (urange + 1 - lrange)) + lrange
-   arry2 = (arry2(:) * (urange + 1 - lrange)) + lrange
+   arry1 = (arry1(:,:) * (urange + 1 - lrange)) + lrange
+   arry2 = (arry2(:,:) * (urange + 1 - lrange)) + lrange
    
    write(0,*) ""
-   write(0,*) "arry 1: ", arry1
+   !write(0,*) "arry 1: ", arry1
    write(0,*) ""
-   write(0,*) "arry 2: ", arry2
+   !write(0,*) "arry 2: ", arry2
    write(0,*) ""
 
-   distance = sum(arry1(:) - arry2(:))**2
+   rTree => mpas_kd_construct(arry1)
 
-   write(0,*) "Distance: ", distance
+   write(0,*) ""
 
+   if (associated(rTree)) then
+      write(0,*) "Real Tree Node: ", rTree % data
+
+      if (associated(rTree % left)) then
+         write(0,*) "Left tree was associated"
+         write(0,*) rTree % left % data
+      else
+         write(0,*) "Left tree was NOT associated"
+      endif
+
+      if (associated(rTree % right)) then
+         write(0,*) "Right tree was associated"
+         write(0,*) rTree % right % data
+      else
+         write(0,*) "Right tree was NOT associated"
+      endif
+   else
+      write(0,*) "rTree was not associated :'("
+   endif
+
+
+   write(0,*) ""
+   write(0,*) "Searching Test!"
+   write(0,*) ""
+   write(0,*) "Searching all points currently in the tree"
+   write(0,*) ""
+
+   do i = 1, size(arry1, dim=2)
+      min_d = huge(min_d)
+      call mpas_kd_search(rTree, arry1(:, i), result, min_d)
+      if (.NOT. (all(result(:) == arry1(:,i)) .AND. min_d == 0.0)) then
+         write(0,*) "That point wasn't in the tree, but its cloest point was: ", result, "and the dist: ", sqrt(min_d)
+      endif
+   enddo
+
+   write(0,*) ""
+   write(0,*) "Searching for randomly created points"
+   write(0,*) ""
+
+   do i = 1, size(arry2, dim=2)
+      min_d = huge(min_d)
+      call mpas_kd_search(rTree, arry2(:, i), result, min_d)
+      if (.NOT. (all(result(:) == arry2(:,i)) .AND. min_d == 0.0)) then
+         write(0,*) "That point wasn't in the tree, but its cloest point was: ", result, "and the dist: ", sqrt(min_d)
+      endif
+   enddo
 
 end subroutine test2
+
+
 
 
 end program mpas_kd_tester
