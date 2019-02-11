@@ -1,6 +1,6 @@
 $testvars
-   npoints = 10
+   npoints = 3
    ndims = 2
-   lrange = -50
+   lrange = 0
    urange = 50
 /

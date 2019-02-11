@@ -1,9 +1,9 @@
 ifeq ($(FC),gfortran)
-	FFLAGS=
+	FFLAGS= -g
 endif
 
 ifeq ($(FC),ifort)
-	FFLAGS=
+	FFLAGS= -g
 endif
 
 OMP = -fopenmp

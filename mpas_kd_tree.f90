@@ -23,7 +23,7 @@ module mpas_kd_tree
       type (kdnode), pointer :: left => null()
       type (kdnode), pointer :: right => null()
 
-      class(*), dimension(:), pointer :: data
+      class(*), dimension(:), allocatable :: data
    end type kdnode
 
 ! Subroutine and function interfaces
@@ -49,12 +49,6 @@ module mpas_kd_tree
 
 
 ! Operator Interfaces
-   interface assignment(=)
-      module procedure assign_int_to_node
-      module procedure assign_real_to_node
-      module procedure assign_node_to_node
-   end interface assignment(=)
-
    interface operator (==)
       module procedure mpas_kd_real_equality
       module procedure mpas_kd_integer_equality
@@ -79,6 +73,11 @@ module mpas_kd_tree
       module procedure mpas_kd_real_lte
       module procedure mpas_kd_integer_lte
    end interface operator (<=)
+
+   interface operator (-)
+      module procedure mpas_kd_integer_sub_left
+      module procedure mpas_kd_real_sub_left
+   end interface operator (-)
 
    interface bubblesort
       module procedure bubbleSort_integer
@@ -133,40 +132,35 @@ module mpas_kd_tree
      ! write(0,*) "CONSTRUCT INT: Number of points: ", npoints
      ! write(0,*) "CONSTRUCT INT: Number of dims: ", ndims
 
-      if (npoints < 1) then
-         !write(0,*) "No points were passed in"
-         tree => null()
-         return
-      endif
-
       if ( .NOT. present(dim)) then
          d = 0
       else
          d = dim
       endif
 
-      d = mod(dim, ndims) + 1
-      write(0,*) d
-
-      allocate(tree)
       median = (1 + npoints) / 2 
+      d = mod(d, ndims) + 1
       call bubbleSort(points, d)
-      
-      tree = points(:,median)
+
+      allocate(tree) ! Allocate the curret node (tree)
+      if (npoints == 1) then
+         allocate(tree % data(ndims), source=points(:, median))
+         return
+      endif
 
       !write(0,*) " Sorted Points: ", points(d,:)
       !write(0,*) " Median: ", points(d, median)
    
       if (median >= 1) then ! Go left
          !write(0,*) "Went left"
-         tree % left = mpas_kd_construct(points(:,1:median-1), d)
+         tree % left => mpas_kd_construct(points(:,1:median-1), d)
       else
          tree % left => null() 
       endif
       
       if (median+1 <= npoints) then ! Go right
          !write(0,*) "Went right"
-         tree % right = mpas_kd_construct(points(:,median+1:npoints), d)
+         tree % right => mpas_kd_construct(points(:,median+1:npoints), d)
       else
          tree % right => null()
       endif
@@ -212,7 +206,7 @@ module mpas_kd_tree
       median = (1 + npoints) / 2 
       call bubbleSort(points, d)
       
-      tree = points(:,median)
+      tree % data = points(:,median)
 
       !write(0,*) " Sorted Points: ", points(d,:)
       !write(0,*) " Median: ", points(d, median)
@@ -247,19 +241,42 @@ module mpas_kd_tree
       
       ! Return Value
       integer :: result
+
+      ! Diff
+      integer, dimension(:), allocatable :: diff
       integer :: ndims
       integer :: d
 
+      real :: dist 
+      real :: min_dist
+
+      write(0,*) "We are at to top of search!"
+
+      write(0,*) size(kdtree % data) 
+      write(0,*) shape(kdtree % data) 
+
+
       ndims = size(kdtree % data, dim=1)
+      allocate(diff(ndims))
+      ! Distance from current node (root)
+      diff = kdtree % data(:) - point(:)
+      dist = sum(diff)**2
+      deallocate(diff)
 
-      d = mod(dim, ndims) + 1
+      write(0,*) "We calculated the distance!"
+      
+      write(0,*) "Dist: ", dist
 
+      ! Search Both
+      if(associated(kdtree % right)) then ! Search right
 
-      if(associated(kdtree % right)) then
       endif
-      if(associated(kdtree % left)) then
+      if(associated(kdtree % left)) then ! Search left
+
 
       endif
+
+      write(0,*) "We finished searching!"
 
 
    end function mpas_kd_search_integer
@@ -318,28 +335,7 @@ module mpas_kd_tree
 
 ! = - Assignment
 !
-   subroutine assign_int_to_node(LHS, RHS)
-      implicit none
-      ! Input Variables
-      type(kdnode), intent(inout) :: LHS
-      integer, dimension(:), intent(in) :: RHS
 
-   end subroutine assign_int_to_node
-   
-   subroutine assign_real_to_node(LHS, RHS)
-      implicit none
-      type(kdnode), intent(inout) :: LHS
-      real, dimension(:), intent(in) :: RHS
-
-
-   end subroutine assign_real_to_node
-
-   subroutine assign_node_to_node(LHS, RHS)
-      implicit none
-      type(kdnode), intent(inout) :: LHS
-      type(kdnode), intent(in) :: RHS
-
-   end subroutine assign_node_to_node
 
 ! == - Equivalence
 !
@@ -471,6 +467,27 @@ module mpas_kd_tree
       logical :: result
 
    end function mpas_kd_real_lte
+
+   function mpas_kd_integer_sub_left(LHS, RHS) result(result)
+      implicit none
+      class(*), dimension(:), intent(in) :: LHS
+      integer, dimension(:), intent(in) :: RHS
+      integer, dimension(size(LHS, dim=1)) :: result
+
+      select type(item => LHS) 
+       type is (integer)
+         result = item(:) - RHS(:)
+      end select 
+
+   end function mpas_kd_integer_sub_left
+
+   function mpas_kd_real_sub_left(LHS, RHS) result(result)
+      implicit none
+      class(*), dimension(:), intent(in) :: LHS
+      real, dimension(:), intent(in) :: RHS
+      real :: result
+
+   end function mpas_kd_real_sub_left
 
 !!!! Possible routines:
 
