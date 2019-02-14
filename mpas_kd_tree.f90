@@ -11,13 +11,7 @@ module mpas_kd_tree
    public :: mpas_kd_construct
    public :: mpas_kd_search
    public :: mpas_kd_remove
-
-   ! Public Operators
-   public :: operator(==)
-   public :: operator(>)
-   public :: operator(<)
-   public :: operator(>=)
-   public :: operator(<=)
+   public :: mpas_kd_free
 
    type kdnode
       type (kdnode), pointer :: left => null()
@@ -51,7 +45,7 @@ module mpas_kd_tree
 
       implicit none
       ! Input Varaibles
-      real, dimension(:,:), intent(inout) :: points
+      real, dimension(:,:) :: points
       integer, optional, value :: dim
 
       ! Return Value
@@ -82,24 +76,18 @@ module mpas_kd_tree
          d = dim
       endif
 
-      d = mod(dim, ndims) + 1
+      d = mod(d, ndims) + 1
 
       median = (1 + npoints) / 2 
-      call bubbleSort(points, d) ! Sort the points
-
-     ! write(0,*) " Sorted Points: ", points(:,:)
-     ! write(0,*) " Median point: ", points(:, median)
-     ! write(0,*) " "
+      
+      ! Sort the points
+      !call bubbleSort(points, d) ! Sort the points
+      call quickSort(points, d, 1, npoints) ! Sort the points
 
       allocate(tree) ! Allocate the node
       allocate(tree % data(ndims)) ! Allocate the data for that node
       tree % data = points(:,median)
 
-      !write(0,*) "We allocated the point: ", points(:, median), tree % data
-
-
-      !write(0,*) " Median: ", points(d, median)
-   
       if (median >= 1) then ! Go left
          tree % left => mpas_kd_construct(points(:,1:median-1), d)
       else
@@ -116,8 +104,8 @@ module mpas_kd_tree
 
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !! mpas_kd_find()
-   !! Search returns the closet value 
+   !! mpas_kd_find(kdtree, point, result, min_d, dim)
+   !! - Find the closet value to point(:)
    !!
    !!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -132,7 +120,7 @@ module mpas_kd_tree
       real, intent(inout) :: min_d
       integer, optional, value :: dim 
 
-      ! Return Value
+      ! Local Values
       integer :: ndims
       integer :: d
       real :: best_distance, current_distance
@@ -150,16 +138,17 @@ module mpas_kd_tree
 
       current_distance = sum( kdtree % data(:) - point(:) )**2
       if ( current_distance < min_d ) then
+         !write(0,*) "min: ", min_d, "current_dist: ", current_distance
          min_d = current_distance
          result = kdtree % data(:) 
+         !write(0,*) "Result: ", result
       endif
 
       if ( point(d) > kdtree % data(d) ) then
-
          if ( associated( kdtree % right ) ) then ! Search Right
             call mpas_kd_search(kdtree % right, point, result, min_d, d)
          endif
-         if ( sum(point(d) - kdtree % data(:))**2 <= min_d .AND. associated(kdtree % left)) then 
+         if ( sum(point(:) - kdtree % data(:))**2 <= min_d .AND. associated(kdtree % left)) then 
             call mpas_kd_search(kdtree % left, point, result, min_d, d)
          endif
 
@@ -167,13 +156,13 @@ module mpas_kd_tree
          if ( associated( kdtree % left) ) then
             call mpas_kd_search(kdtree % left, point, result, min_d, d)
          endif
-         if ( sum(point(:) - kdtree % data(:))**2 <= min_d .AND. associated(kdtree % right )) then
+         if ( sum(point(:) - kdtree % data(:))**2 <= min_d .AND. associated(kdtree % right)) then
             call mpas_kd_search(kdtree % right, point, result, min_d, d)
          endif
 
       else ! Go both
-         if(associated(kdtree % right)) call mpas_kd_search(kdtree % right, point, result, min_d, d+1)
-         if(associated(kdtree % left)) call mpas_kd_search(kdtree % left, point, result, min_d, d+1)
+         if(associated(kdtree % right)) call mpas_kd_search(kdtree % right, point, result, min_d, d)
+         if(associated(kdtree % left)) call mpas_kd_search(kdtree % left, point, result, min_d, d)
       endif
 
    end subroutine mpas_kd_search
@@ -185,17 +174,31 @@ module mpas_kd_tree
    !!
    !!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   function mpas_kd_remove(kdtree, val) result(ierr)
+   function mpas_kd_remove(kdtree, point) result(ierr)
 
       implicit none
       ! Input Variables
       type (kdnode), intent(inout) :: kdtree
-      real, dimension(:), intent(in) :: val
+      real, dimension(:), intent(in) :: point
 
       ! Return Value
       integer :: ierr
 
+      
+
    end function mpas_kd_remove
+
+   recursive subroutine mpas_kd_free(kdtree)
+
+      implicit none
+      type(kdnode), pointer :: kdtree
+
+      if ( .NOT. associated(kdtree) ) return
+
+      call mpas_kd_free(kdtree % left)
+      call mpas_kd_free(kdtree % right)
+
+   end subroutine mpas_kd_free
 
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -231,5 +234,98 @@ module mpas_kd_tree
 
    end subroutine bubbleSort
 
+   recursive subroutine quickSort(array, dim, arrayStart, arrayEnd)
+
+      implicit none
+      ! Input Variable
+      real, dimension(:,:) :: array
+      integer, intent(in), value :: dim
+      integer, intent(in), value :: arrayStart, arrayEnd
+
+      ! Local Variables 
+      integer :: ndims, npoints
+      real, dimension(size(array, dim=1)) :: temp
+      real, dimension(size(array, dim=1)) :: pivot_value
+
+      integer :: l, r, pivot, s
+
+
+      ndims = size(array, dim=1)
+      npoints = arrayEnd
+
+      if ( (arrayEnd - arrayStart) < 1 ) then
+         return
+      endif
+
+      ! Create the left, right, and start pointers
+      l = arrayStart
+      r = arrayEnd - 1
+      s = l
+
+      pivot = (l+r)/2
+      pivot_value = array(:, pivot)
+
+      ! Move the pivot to the far right
+      temp(:) = array(:,pivot)
+      array(:,pivot) = array(:,arrayEnd)
+      array(:,arrayEnd) = temp(:)
+
+      do while ( .TRUE. )
+         ! Advance the left pointer until it is a value less then our pivot_value(dim)
+         do while ( array(dim, l) < pivot_value(dim) )
+            l = l + 1
+         enddo
+
+         ! Advance the right pointer until it is a value more then our pivot_value(dim)
+         do while ( r > 0 .AND. array(dim, r) > pivot_value(dim) )
+            r = r - 1
+         enddo
+
+         ! l >= r so return and quicksort the left and right subtrees
+         if ( l >= r ) then 
+            exit
+         else ! Swap elements about the pivot
+            temp = array(:,l)
+            array(:,l) = array(:,r)
+            array(:,r) = temp
+         endif
+      enddo
+
+      ! Move the pivot to where the l ended up
+      temp(:) = array(:,l)
+      array(:,l) = array(:,arrayEnd)
+      array(:,arrayEnd) = temp(:)
+
+      !Quick Sort on the lower partition
+      call quickSort(array(:,:), dim, s, l-1)
+      
+      !Quick sort on the upper partition
+      call quickSort(array(:,:), dim, l+1, arrayEnd)
+
+   end subroutine quicksort
+
+   subroutine insertionSort(array, dim, startArray, endArray)
+
+      implicit none
+
+      real, dimension(:,:), intent(inout) :: array
+      integer, intent(in), value :: dim
+      integer, intent(in), value :: startArray
+      integer, intent(in), value :: endArray
+
+      real, dimension(dim) :: temp
+      integer :: i, j
+
+      do i = startArray, endArray, 1
+         do j = startArray, endArray, 1
+            if ( array(dim, i) > array(dim, j) ) then
+               temp(:) = array(:,i)
+               array(:,i) = array(:,j)
+               array(:,j) = temp(:)
+            endif
+         enddo
+      enddo
+
+   end subroutine insertionSort
 
 end module mpas_kd_tree

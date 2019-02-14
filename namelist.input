@@ -1,6 +1,11 @@
 $testvars
-   npoints = 50000
-   ndims = 10
-   lrange = -1000
-   urange = 1000
+   npoints = 1000000
+   ndims = 1
+   lrange = 0
+   urange = 50
+   ntests = 50000
+   npoints_l = 100
+   npoints_u = 10000
+   ndims_l = 10
+   ndims_u = 100
 /
