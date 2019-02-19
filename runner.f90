@@ -48,6 +48,7 @@ program mpas_kd_tester
             call test4(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
          case ('5')
             write(0,*) "Launching test 5"
+            call test5(ntests, npoints, ndims, lrange, urange)
       endselect
    enddo
 
@@ -306,5 +307,47 @@ subroutine test4(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
    call mpas_kd_free(tree)
 
 end subroutine test4
+
+subroutine test5(ntests, npoints, ndims, lrange, urange)
+
+   implicit none
+
+   integer, intent(in), value :: ntests
+   integer, intent(in), value :: npoints
+   integer, intent(in), value :: ndims
+   integer, intent(in), value :: lrange
+   integer, intent(in), value :: urange
+
+   type(kdnode), pointer :: tree => null()
+   real, dimension(:,:), pointer :: arry1, arry2
+   integer :: i
+
+   allocate(arry1(ndims, npoints))
+   allocate(arry2(ndims, npoints))
+
+   call random_number(arry1(:,:))
+   call random_number(arry2(:,:))
+
+   arry1(:,:) = (arry1(:,:) * (urange + 1 - lrange)) + lrange
+   arry2(:,:) = (arry2(:,:) * (urange + 1 - lrange)) + lrange
+
+   write(0,*) "Number of points: ", npoints, " Number of dims: ", ndims
+
+   do i = 1, size(arry1, dim=2), 1
+      call mpas_kd_insert(tree, arry1(:,i))
+   enddo
+
+   write(0,*) "All ", npoints, "were added into the tree!"
+
+   do i = 1, size(arry1, dim=2), 1
+      if( .NOT. search_tree(tree, arry1(:,i))) then
+         write(0,*) "This point was not found! But it should have been!!"
+         stop
+      endif
+   enddo
+
+   write(0,*) "All points that were inserted to make the tree were succesfully found within the tree!!"
+
+end subroutine test5
 
 end program mpas_kd_tester

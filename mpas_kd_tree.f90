@@ -27,12 +27,40 @@ module mpas_kd_tree
    !! mpas_kd_insert()
    !! 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   subroutine mpas_kd_insert(kdtree, val)
+   recursive subroutine mpas_kd_insert(kdtree, val, dim)
 
       implicit none
       ! Input Variables
       type(kdnode), intent(inout), pointer :: kdtree
       real, dimension(:), intent(in) :: val
+      integer, optional, value :: dim
+
+      integer :: ndims
+      integer :: d
+
+      if ( .NOT. present(dim)) then
+         d = 0
+      else
+         d = dim
+      endif
+
+      ndims = size(val)
+      d = mod(d, ndims) + 1
+
+      if ( .NOT. associated(kdtree)) then
+         allocate(kdtree)
+         allocate(kdtree % data(ndims))
+         kdtree % left => null()
+         kdtree % right => null()
+         kdtree % data = val
+         return
+      endif
+
+      if ( val(d) > kdtree % data(d)) then
+         call mpas_kd_insert(kdtree % right , val, d)
+      else
+         call mpas_kd_insert(kdtree % left, val, d)
+      endif
 
    end subroutine mpas_kd_insert
 
