@@ -221,10 +221,17 @@ module mpas_kd_tree
       implicit none
       type(kdnode), pointer :: kdtree
 
-      if ( .NOT. associated(kdtree) ) return
 
-      call mpas_kd_free(kdtree % left)
-      call mpas_kd_free(kdtree % right)
+      if (associated(kdtree % left)) then
+         call mpas_kd_free(kdtree % left)
+      endif
+
+      if (associated(kdtree % right)) then
+         call mpas_kd_free(kdtree % right)
+      endif
+
+      deallocate(kdtree % data)
+      deallocate(kdtree)
 
    end subroutine mpas_kd_free
 

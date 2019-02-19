@@ -49,6 +49,9 @@ program mpas_kd_tester
          case ('5')
             write(0,*) "Launching test 5"
             call test5(ntests, npoints, ndims, lrange, urange)
+         case ('6')
+            write(0,*) "Launching test 6"
+            call test6(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
       endselect
    enddo
 
@@ -219,7 +222,42 @@ subroutine test3(npoints, ndims, lrange, urange)
    call timer_stop(0, sec, nsec)
    write(0,*) "time: ", sec, nsec
 
+   write(0,*) "Freeing rTree"
+   call timer_start(0)
    call mpas_kd_free(rTree)
+   call timer_stop(0, sec, nsec)
+   write(0,*) "time: ", sec, nsec
+
+   write(0,*) "=============================================="
+   write(0,*) "Testing timing for inserting nodes"
+   call timer_start(0)
+   do i = 1, size(arry1, dim=2)
+      call mpas_kd_insert(rTree, arry1(:, i))
+   enddo
+   call timer_stop(0, sec, nsec)
+   write(0,*) "Tree insertion creation time: ", sec, nsec
+
+   write(0,*) "Searching for points that are within the INSERTED tree..." 
+   call timer_start(0)
+   do i = 1, size(arry1, dim=2)
+      call mpas_kd_search(rTree, arry1(:, i), result, min_d)
+   enddo
+   call timer_stop(0, sec, nsec)
+   write(0,*) "time: ", sec, nsec
+
+   write(0,*) "Searching for points that are NOT within the INSERTED tree..." 
+   call timer_start(0)
+   do i = 1, size(arry1, dim=2)
+      call mpas_kd_search(rTree, arry2(:, i), result, min_d)
+   enddo
+   call timer_stop(0, sec, nsec)
+   write(0,*) "time: ", sec, nsec
+
+   write(0,*) "Freeing rTree"
+   call timer_start(0)
+   call mpas_kd_free(rTree)
+   call timer_stop(0, sec, nsec)
+   write(0,*) "time: ", sec, nsec
 
    
 end subroutine test3
@@ -301,10 +339,9 @@ subroutine test4(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
 
       deallocate(arry1)
       deallocate(arry2)
+      call mpas_kd_free(tree)
 
    enddo
-
-   call mpas_kd_free(tree)
 
 end subroutine test4
 
@@ -320,7 +357,9 @@ subroutine test5(ntests, npoints, ndims, lrange, urange)
 
    type(kdnode), pointer :: tree => null()
    real, dimension(:,:), pointer :: arry1, arry2
-   integer :: i
+   integer :: i, j
+   real :: r_ndims, r_npoints
+   integer :: ndims2, npoints2
 
    allocate(arry1(ndims, npoints))
    allocate(arry2(ndims, npoints))
@@ -347,7 +386,69 @@ subroutine test5(ntests, npoints, ndims, lrange, urange)
    enddo
 
    write(0,*) "All points that were inserted to make the tree were succesfully found within the tree!!"
+   call mpas_kd_free(tree)
 
 end subroutine test5
+
+subroutine test6(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
+
+   implicit none
+
+   integer, intent(in), value :: ntests
+   integer, intent(in), value :: lrange
+   integer, intent(in), value :: urange
+   integer, intent(in), value :: npoints_l
+   integer, intent(in), value :: npoints_u
+   integer, intent(in), value :: ndims_l
+   integer, intent(in), value :: ndims_u
+
+   real, dimension(:,:), pointer :: arry1, arry2
+   type(kdnode), pointer :: tree => null()
+
+   real :: r_ndims, r_npoints
+   integer :: ndims, npoints
+
+   integer :: i, j
+
+   write(0,*) "Running Random tests with insert"
+   write(0,*) " running ", ntests, " tests"
+   write(0,*) ""
+
+   do i = 1, ntests, 1
+      call random_number(r_ndims)
+      call random_number(r_npoints)
+      ndims = int((r_ndims * (ndims_u + 1 - ndims_l)) + ndims_l)
+      npoints = int((r_npoints * (npoints_u + 1 - npoints_l)) + npoints_l)
+      write(0,*) "Test number: ", i
+      write(0,*) "ndims: ", ndims, " npoints: ", npoints
+
+      allocate(arry1(ndims, npoints))
+      allocate(arry2(ndims, npoints))
+
+      call random_number(arry1(:,:))
+      call random_number(arry2(:,:))
+      arry1 = (arry1(:,:) * (urange + 1 - lrange)) + lrange
+      arry2 = (arry2(:,:) * (urange + 1 - lrange)) + lrange
+
+      do j = 1, npoints, 1
+         call mpas_kd_insert(tree, arry1(:, j))
+      enddo
+      
+      !write(0,*) "Arry1: ", arry1
+
+      do j = 1, size(arry1, dim=2), 1
+         if( .NOT. search_tree(tree, arry1(:,j))) then
+            write(0,*) "This point was not found"
+            stop
+         endif
+      enddo
+
+      deallocate(arry1)
+      deallocate(arry2)
+      call mpas_kd_free(tree)
+
+   enddo
+
+end subroutine test6
 
 end program mpas_kd_tester
