@@ -12,6 +12,7 @@ module mpas_kd_tree
    public :: mpas_kd_search
    public :: mpas_kd_remove
    public :: mpas_kd_free
+   public :: mpas_kd_find_min
 
    type kdnode
       type (kdnode), pointer :: left => null()
@@ -196,23 +197,168 @@ module mpas_kd_tree
    end subroutine mpas_kd_search
 
 
+   recursive subroutine mpas_kd_find_min_internal(kdtree, point, dim, minimum, depth)
+
+      implicit none
+
+      type (kdnode), pointer :: kdtree
+      real, dimension(:), intent(inout) :: point
+      integer, intent(in) :: dim
+      real, dimension(:), intent(inout) :: minimum 
+      integer, optional, value :: depth
+
+      integer :: ndims
+      integer :: d
+
+      ndims = size(point)
+
+      if ( .NOT. present(depth)) then
+         d = 0
+      else
+         d = depth
+      endif
+
+      d = mod(d, ndims) + 1
+
+      ! Base Case
+      if (.NOT. associated(kdtree)) then
+         return
+      endif
+
+      if(kdtree % data(dim) < minimum(dim)) then
+         minimum(:) = kdtree % data(:)
+         point(:) = kdtree % data(:)
+      endif
+
+      ! If the current split dimension (d) is equal to the dimension we asked for (dim)
+      ! then we know that the smallest point in this dimension is within the left subtree
+      if ( d == dim ) then 
+         if (.NOT. associated(kdtree % left)) then
+            return
+         else
+            call mpas_kd_find_min_internal(kdtree%left, point, dim, minimum, d)
+         endif
+
+      ! Else we do not know here the smallest value lies, so we must recursivly search both
+      ! subtrees.
+      else
+         call mpas_kd_find_min_internal(kdtree%left, point, dim, minimum, d)
+         call mpas_kd_find_min_internal(kdtree%right, point, dim, minimum, d)
+      endif
+
+   end subroutine mpas_kd_find_min_internal
+
+   subroutine mpas_kd_find_min(kdtree, point, dim)
+      
+      implicit none
+
+      ! Input Variables
+      type (kdnode), pointer :: kdtree
+      real, dimension(:), intent(inout) :: point
+      integer, intent(in) :: dim
+
+      ! Local variables
+      real, dimension(size(point)) :: minimum
+
+      minimum = huge(minimum)
+
+      call mpas_kd_find_min_internal(kdtree, point, dim, minimum)
+
+   end subroutine mpas_kd_find_min
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !! mpas_kd_remove
    !!
    !!
    !!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   function mpas_kd_remove(kdtree, point) result(ierr)
+   recursive function mpas_kd_remove(kdtree, point, dim) result(ierr)
 
       implicit none
       ! Input Variables
-      type (kdnode), intent(inout) :: kdtree
+      type (kdnode), pointer :: kdtree
       real, dimension(:), intent(in) :: point
+      integer, optional, value :: dim
 
       ! Return Value
-      integer :: ierr
+      real, dimension(size(point)) :: min_point
+      integer :: d
+      integer :: ndims
+      logical :: ierr
 
-      
+      ndims = size(point)
+
+      if ( .not. present(dim)) then
+         d = 0
+      else
+         d = dim
+      endif
+
+      d = mod(d, ndims) + 1
+
+      ! If we have a leaf node, remove it trivially
+      if ( .NOT. associated(kdtree)) then
+         write(0,*) "This point was not associated :("
+         ierr = .FALSE.
+         return
+      endif
+
+      ! Check to see if our child nodes are the point .AND. are leaf nodes.
+      !  If one of them is, then deallocate it, and set the corrosponding pointer to NULL 
+      ! 
+
+      if( .not. associated(kdtree % left) .AND. .not. associated(kdtree % right)) then
+         if ( all(kdtree % data(:) == point(:) )) then
+            deallocate(kdtree % data)
+            deallocate(kdtree)
+            ierr = .TRUE.
+            return
+         endif
+      endif
+   
+      if( all(kdtree % data(:) == point(:)) ) then ! The current node equals the requested point
+         if ( associated(kdtree % right) ) then
+            ! Find the minimum on the right side - replace the current node with it
+            call mpas_kd_find_min(kdtree % right, min_point, d)
+            kdtree % data(:) = min_point(:) 
+            ! Call delete on the node that we found to be the minimum
+            if ( .NOT. mpas_kd_remove(kdtree % right, min_point, d) ) then
+               write(0,*) "We could not delete the replacement node on the right subtree!"
+               write(0,*) "replacement point: ", min_point
+               stop
+            endif
+            ierr = .TRUE.
+            return
+         elseif ( associated(kdtree % left) ) then
+            ! Find the minimum on the left side - replace the current node with it
+            call mpas_kd_find_min(kdtree % left, min_point, d)
+            kdtree % data(:) = min_point(:) 
+
+            ! Call delete on the node that we found to be the minimum
+            if ( .NOT. mpas_kd_remove(kdtree % left, min_point, d) ) then
+               write(0,*) "We could not delete the replacement node on the left subtree!"
+               write(0,*) "replacement point: ", min_point
+               stop
+            endif
+            ierr = .TRUE.
+            return
+         endif
+      endif
+        
+
+      if (point(d) < kdtree % data(d) .AND. associated(kdtree % left)) then
+         if (mpas_kd_remove(kdtree % left, point, d)) then
+            ierr = .TRUE.
+            return
+         endif
+      endif
+      if (point(d) > kdtree % data(d) .AND. associated(kdtree % right)) then
+         if (mpas_kd_remove(kdtree % right, point, d)) then
+            ierr = .TRUE.
+            return
+         endif
+      endif
+
 
    end function mpas_kd_remove
 

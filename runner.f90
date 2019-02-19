@@ -3,6 +3,7 @@ program mpas_kd_tester
    use mpas_kd_tree, only : kdnode
    use mpas_kd_tree, only : mpas_kd_insert, mpas_kd_construct, mpas_kd_search, mpas_kd_remove
    use mpas_kd_tree, only : mpas_kd_free
+   use mpas_kd_tree, only : mpas_kd_find_min
    use getoptf
 
    implicit none
@@ -52,6 +53,12 @@ program mpas_kd_tester
          case ('6')
             write(0,*) "Launching test 6"
             call test6(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
+         case ('m')
+            write(0,*) "Launching Minimum Test"
+            call test_min(ntests, npoints, ndims, lrange, urange)
+         case ('r')
+            write(0,*) "Launching remove Test"
+            call test_remove(ntests, npoints, ndims, lrange, urange)
       endselect
    enddo
 
@@ -450,5 +457,101 @@ subroutine test6(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
    enddo
 
 end subroutine test6
+
+subroutine test_min(ntests, npoints, ndims, lrange, urange)
+
+   implicit none
+
+   integer, intent(in), value :: ntests
+   integer, intent(in), value :: npoints
+   integer, intent(in), value :: ndims
+   integer, intent(in), value :: lrange
+   integer, intent(in), value :: urange
+
+   type(kdnode), pointer :: tree => null()
+   real, dimension(:,:), pointer :: arry1, arry2
+   real, dimension(2,7) :: arry3
+   real, dimension(ndims) :: min_point 
+   integer :: i, j
+   real :: r_ndims, r_npoints
+   real, dimension(ndims) :: minimum
+   integer :: ndims2, npoints2
+
+   minimum = huge(minimum)
+
+   arry3 = reshape((/15, 33, 41, 66, 35, 92, 46, 53, 80, 65, 50, 76, 75, 86, 81, 98/), shape(arry3))
+
+   allocate(arry1(ndims, npoints))
+   allocate(arry2(ndims, npoints))
+
+   call random_number(arry1(:,:))
+   call random_number(arry2(:,:))
+
+   arry1(:,:) = (arry1(:,:) * (urange + 1 - lrange)) + lrange
+   arry2(:,:) = (arry2(:,:) * (urange + 1 - lrange)) + lrange
+
+   tree => mpas_kd_construct(arry1(:,:))
+   
+   call mpas_kd_find_min(tree, min_point, 1)
+
+   write(0,*) "Found min along dimension 1 : ", min_point(1)
+   write(0,*) "Minimum along dimension 1: ", minval(arry1(1,:))
+
+
+end subroutine test_min
+
+subroutine test_remove(ntests, npoints, ndims, lrange, urange)
+
+   implicit none
+
+   integer, intent(in), value :: ntests
+   integer, intent(in), value :: npoints
+   integer, intent(in), value :: ndims
+   integer, intent(in), value :: lrange
+   integer, intent(in), value :: urange
+
+   type(kdnode), pointer :: tree => null()
+   real, dimension(:,:), pointer :: arry1, arry2
+   real, dimension(ndims) :: min_point 
+   real, dimension(2,7) :: arry3
+   integer :: i, j
+   real :: r_ndims, r_npoints
+   real, dimension(ndims) :: minimum
+   integer :: ndims2, npoints2
+
+   minimum = huge(minimum)
+
+   arry3 = reshape((/15, 33, 41, 66, 35, 92, 46, 53, 80, 65, 50, 76, 75, 86, 81, 98/), shape(arry3))
+
+   allocate(arry1(ndims, npoints))
+   allocate(arry2(ndims, npoints))
+
+   call random_number(arry1(:,:))
+   call random_number(arry2(:,:))
+
+   arry1(:,:) = (arry1(:,:) * (urange + 1 - lrange)) + lrange
+   arry2(:,:) = (arry2(:,:) * (urange + 1 - lrange)) + lrange
+
+   tree => mpas_kd_construct(arry3(:,:))
+
+   write(0,*) arry3
+   do i = 1, size(arry3, dim=2), 1
+      write(0,*) ""
+      write(0,*) "Removing point: ", arry3(:,i)
+      if(.NOT. mpas_kd_remove(tree, arry3(:,i))) then
+         write(0,*) "We were not able to remove the point: ", arry3(:,i)
+         stop
+      else
+         write(0,*) "We removed ", arry3(:, i)
+      endif
+      write(0,*) ""
+      if( associated(tree)) then
+         write(0,*) "Tree top: ", tree % data(:)
+         if ( associated(tree % right) ) write(0,*) "Tree right: ", tree%right%data(:)
+         if ( associated(tree % left) ) write(0,*) "Tree left: ", tree%left%data(:)
+      endif
+   enddo
+
+end subroutine
 
 end program mpas_kd_tester
