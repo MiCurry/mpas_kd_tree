@@ -58,7 +58,7 @@ program mpas_kd_tester
             call test_min(ntests, npoints, ndims, lrange, urange)
          case ('r')
             write(0,*) "Launching remove Test"
-            call test_remove(ntests, npoints, ndims, lrange, urange)
+            call test_remove(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
       endselect
    enddo
 
@@ -500,15 +500,44 @@ subroutine test_min(ntests, npoints, ndims, lrange, urange)
 
 end subroutine test_min
 
-subroutine test_remove(ntests, npoints, ndims, lrange, urange)
+recursive subroutine print_tree(tree, left_or_right, level)
+
+   implicit none
+   type(kdnode), intent(inout), pointer :: tree
+   integer, value :: left_or_right
+   integer, value :: level
+
+   if ( .NOT. associated(tree) .OR. .NOT. associated(tree % data)) then
+      write(0,*) " I AM AN UNASSOCIATED NODE"
+      return
+   endif
+
+   if (associated(tree) .AND. associated(tree % data)) then
+      if (left_or_right == -1) then
+         write(0,*) "Level: ", level, "Left: ", tree % data(:) 
+      elseif (left_or_right == 0) then
+         write(0,*) "Level: ", level, "Root: ", tree % data(:)
+      elseif (left_or_right == 1) then
+         write(0,*) "Level: ", level, "Right: ", tree % data(:)
+      endif
+   endif
+
+   if ( associated(tree % left)) call print_tree(tree % left, -1, level + 1)
+   if ( associated(tree % right)) call print_tree(tree % right, 1, level + 1)
+
+end subroutine print_tree
+
+subroutine test_remove(ntests, lrange, urange, npoints_l, npoints_u, ndims_l, ndims_u)
 
    implicit none
 
    integer, intent(in), value :: ntests
-   integer, intent(in), value :: npoints
-   integer, intent(in), value :: ndims
    integer, intent(in), value :: lrange
    integer, intent(in), value :: urange
+   integer, intent(in), value :: npoints_l
+   integer, intent(in), value :: npoints_u
+   integer, intent(in), value :: ndims_l
+   integer, intent(in), value :: ndims_u
 
    type(kdnode), pointer :: tree => null()
    real, dimension(:,:), pointer :: arry1, arry2
@@ -519,37 +548,35 @@ subroutine test_remove(ntests, npoints, ndims, lrange, urange)
    real, dimension(ndims) :: minimum
    integer :: ndims2, npoints2
 
-   minimum = huge(minimum)
+   do j = 1, ntests, 1
+      call random_number(r_ndims)
+      call random_number(r_npoints)
+      ndims = int((r_ndims * (ndims_u + 1 - ndims_l)) + ndims_l)
+      npoints = int((r_npoints * (npoints_u + 1 - npoints_l)) + npoints_l)
+      write(0,*) "Test number: ", j
+      write(0,*) "ndims: ", ndims, " npoints: ", npoints
 
-   arry3 = reshape((/15, 33, 41, 66, 35, 92, 46, 53, 80, 65, 50, 76, 75, 86, 81, 98/), shape(arry3))
+      allocate(arry1(ndims, npoints))
+      allocate(arry2(ndims, npoints))
 
-   allocate(arry1(ndims, npoints))
-   allocate(arry2(ndims, npoints))
+      call random_number(arry1(:,:))
+      call random_number(arry2(:,:))
+      arry1 = (arry1(:,:) * (urange + 1 - lrange)) + lrange
+      arry2 = (arry2(:,:) * (urange + 1 - lrange)) + lrange
 
-   call random_number(arry1(:,:))
-   call random_number(arry2(:,:))
+      tree => mpas_kd_construct(arry1(:,:))
 
-   arry1(:,:) = (arry1(:,:) * (urange + 1 - lrange)) + lrange
-   arry2(:,:) = (arry2(:,:) * (urange + 1 - lrange)) + lrange
-
-   tree => mpas_kd_construct(arry3(:,:))
-
-   write(0,*) arry3
-   do i = 1, size(arry3, dim=2), 1
-      write(0,*) ""
-      write(0,*) "Removing point: ", arry3(:,i)
-      if(.NOT. mpas_kd_remove(tree, arry3(:,i))) then
-         write(0,*) "We were not able to remove the point: ", arry3(:,i)
-         stop
-      else
-         write(0,*) "We removed ", arry3(:, i)
-      endif
-      write(0,*) ""
-      if( associated(tree)) then
-         write(0,*) "Tree top: ", tree % data(:)
-         if ( associated(tree % right) ) write(0,*) "Tree right: ", tree%right%data(:)
-         if ( associated(tree % left) ) write(0,*) "Tree left: ", tree%left%data(:)
-      endif
+      do i = 1, size(arry1, dim=2), 1
+         if(associated(tree)) then
+            if(.NOT. mpas_kd_remove(tree, arry1(:,i))) then
+               write(0,*) "We were not able to remove the point: ", arry1(:,i)
+               stop
+            else
+            endif
+         else
+            write(0,*) "The tree is no long associated"
+         endif
+      enddo
    enddo
 
 end subroutine
