@@ -111,7 +111,9 @@ module mpas_kd_tree
       
       ! Sort the points
       !call bubbleSort(points, d) ! Sort the points
-      call quickSort(points, d, 1, npoints) ! Sort the points
+      if ( npoints > 1 ) then
+         call quickSort(points, d, 1, npoints) ! Sort the points
+      endif
 
       allocate(tree) ! Allocate the node
       allocate(tree % data(ndims)) ! Allocate the data for that node

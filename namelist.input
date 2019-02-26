@@ -1,5 +1,5 @@
 $testvars
-   npoints = 1000000
+   npoints = 5000000
    ndims = 3
    lrange = 1
    urange = 20
