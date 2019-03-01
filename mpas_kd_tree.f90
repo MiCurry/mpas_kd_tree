@@ -232,6 +232,7 @@ module mpas_kd_tree
          point(:) = kdtree % data(:)
       endif
 
+
       ! If the current split dimension (d) is equal to the dimension we asked for (dim)
       ! then we know that the smallest point in this dimension is within the left subtree
       if ( d == dim ) then 
@@ -263,7 +264,7 @@ module mpas_kd_tree
 
       minimum = huge(minimum)
 
-      call mpas_kd_find_min_internal(kdtree, point, dim, minimum, dim)
+      call mpas_kd_find_min_internal(kdtree, point, dim, minimum)
 
    end subroutine mpas_kd_find_min
 
