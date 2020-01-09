@@ -1,5 +1,15 @@
 module mpas_kd_tree
     
+   !***********************************************************************
+   !
+   !  module mpas_kd_tree
+   !
+   !> \brief   MPAS KD-Tree module
+   !> \author  Miles A. Curry
+   !> \date    03/04/19
+   !> \details
+   !
+   !-----------------------------------------------------------------------
    implicit none
 
    private
@@ -7,366 +17,249 @@ module mpas_kd_tree
    public :: kdnode
 
    ! Public Subroutines
-   public :: mpas_kd_insert
    public :: mpas_kd_construct
    public :: mpas_kd_search
-   public :: mpas_kd_remove
    public :: mpas_kd_free
-   public :: mpas_kd_find_min
 
    type kdnode
       type (kdnode), pointer :: left => null()
       type (kdnode), pointer :: right => null()
 
-      real, dimension(:), pointer :: data
+      integer :: split_dim
+      real, dimension(:), pointer :: point => null()
+
+      integer :: cell
    end type kdnode
 
    contains
 
 
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !! mpas_kd_insert()
-   !! 
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   recursive subroutine mpas_kd_insert(kdtree, val, dim)
+   !***********************************************************************
+   !
+   !  recusrive routine mpas_kd_construct_internal
+   !
+   !> \brief   Create a KD-Tree from a set of k-Dimensional points
+   !> \author  Miles A. Curry
+   !> \date    03/04/19
+   !> \details
+   !> Recursive function for mpas_kd_construct. See mpas_kd_construct for
+   !> more information.
+   !
+   !-----------------------------------------------------------------------
+   recursive function mpas_kd_construct_internal(points, ndims, npoints, dim) result(tree)
 
       implicit none
-      ! Input Variables
-      type(kdnode), intent(inout), pointer :: kdtree
-      real, dimension(:), intent(in) :: val
-      integer, optional, value :: dim
 
-      integer :: ndims
-      integer :: d
-
-      if ( .NOT. present(dim)) then
-         d = 0
-      else
-         d = dim
-      endif
-
-      ndims = size(val)
-      d = mod(d, ndims) + 1
-
-      if ( .NOT. associated(kdtree)) then
-         allocate(kdtree)
-         allocate(kdtree % data(ndims))
-         kdtree % left => null()
-         kdtree % right => null()
-         kdtree % data = val
-         return
-      endif
-
-      if ( val(d) > kdtree % data(d)) then
-         call mpas_kd_insert(kdtree % right , val, d)
-      else
-         call mpas_kd_insert(kdtree % left, val, d)
-      endif
-
-   end subroutine mpas_kd_insert
-
-
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !! mpas_kd_construct()
-   !!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   recursive function mpas_kd_construct(points, dim) result(tree)
-
-      implicit none
       ! Input Varaibles
-      real, dimension(:,:) :: points
-      integer, optional, value :: dim
+      !real, dimension(:,:) :: points
+      type (kdnode), dimension(:), target :: points
+      integer, intent(in) :: ndims
+      integer, value :: npoints
+      integer, value :: dim
 
       ! Return Value
       type (kdnode), pointer :: tree
 
       ! Local Variables
-      integer :: npoints
-      integer :: ndims
-      integer :: d
       integer :: median
 
-      ndims = size(points, dim=1)
-      npoints = size(points, dim=2)
-
-     ! write(0,*)
-     ! write(0,*) "CONSTRUCT INT: Number of points: ", npoints
-     ! write(0,*) "CONSTRUCT INT: Number of dims: ", ndims
-
-      if(npoints < 1) then
+      if (npoints < 1) then
          tree => null()
          return
       endif
 
-      ! If we have no dimensions
-      if ( .NOT. present(dim)) then
-         d = 0
-      else
-         d = dim
-      endif
+      ! Sort the points at the split dimension
+      dim = mod(dim, ndims) + 1
+      call quickSort(points, dim, 1, npoints, ndims)
 
-      d = mod(d, ndims) + 1
+      median = (1 + npoints) / 2
 
-      median = (1 + npoints) / 2 
+      points(median) % split_dim = dim
+      tree => points(median)
+
+      ! Build the right and left sub-trees but do not include the
+      ! node that was just allocated (i.e. points(:, median))
+      points(median)%left => mpas_kd_construct_internal(points(1:median-1), ndims, median - 1, points(median) % split_dim)
+      points(median)%right => mpas_kd_construct_internal(points(median+1:npoints), ndims, npoints - median, points(median) &
+                                                                                                                     % split_dim)
+
+   end function mpas_kd_construct_internal
+
+
+   !***********************************************************************
+   !
+   !  routine mpas_kd_construct
+   !
+   !> \brief   Create a KD-Tree from a set of k-Dimensional points
+   !> \author  Miles A. Curry
+   !> \date    03/04/19
+   !> \details
+   !> This routine creates a balanced KD-Tree from a set of K-dimensional 
+   !> points via quicksort and it returns a pointer to the root node of that
+   !> tree. The points dummy argument, should be an array with the dimensions
+   !> defined as: `points(k, n)` with k being the number of dimensions, and n
+   !> being the number of points.
+   !>
+   !> tree => mpas_kd_construct(points)
+   !
+   !-----------------------------------------------------------------------
+   function mpas_kd_construct(points, ndims) result(tree)
+
+      implicit none
+
+      ! Input Varaibles
+      !real, dimension(:,:) :: points
+      type (kdnode), dimension(:) :: points
+      integer, intent(in) :: ndims
+
+      ! Return Value
+      type (kdnode), pointer :: tree
+
+      ! Local Varaibles
+      integer :: npoints
+
+      npoints = size(points)
       
-      ! Sort the points
-      !call bubbleSort(points, d) ! Sort the points
-      if ( npoints > 1 ) then
-         call quickSort(points, d, 1, npoints) ! Sort the points
+      if(npoints < 1) then
+         ! No points were passed in, return null
+         write(0,*) "ERROR: mpas_kd_tree - No points were passed in to construct!"
+         tree => null()
+         return
       endif
 
-      allocate(tree) ! Allocate the node
-      allocate(tree % data(ndims)) ! Allocate the data for that node
-      tree % data = points(:,median)
-
-      if (median >= 1) then ! Go left
-         tree % left => mpas_kd_construct(points(:,1:median-1), d)
-      else
-         tree % left => null() 
-      endif
-      
-      if (median+1 <= npoints) then ! Go right
-         tree % right => mpas_kd_construct(points(:,median+1:npoints), d)
-      else
-         tree % right => null()
-      endif
+      tree => mpas_kd_construct_internal(points(:), ndims, npoints, 0)
 
    end function mpas_kd_construct
 
 
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !! mpas_kd_find(kdtree, point, result, min_d, dim)
-   !! - Find the closet value to point(:)
-   !!
-   !!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   recursive subroutine mpas_kd_search(kdtree, point, result, min_d, dim)
-      
+   !***********************************************************************
+   !
+   !  recursive routine mpas_kd_search_internal
+   !
+   !> \brief   Find the nearest neighbor within a KD-Tree
+   !> \author  Miles A. Curry
+   !> \date    03/04/19
+   !> \details
+   !> Recursive subroutine for mpas_kd_search. See mpas_kd_search for more
+   !> information.
+   !
+   !-----------------------------------------------------------------------
+   recursive subroutine mpas_kd_search_internal(kdtree, query, res, distance)
+
       implicit none
 
       ! Input Variables
       type(kdnode), pointer, intent(in) :: kdtree
-      real, dimension(:), intent(in) :: point
-      real, dimension(:), intent(out) :: result
-      real, intent(inout) :: min_d
-      integer, optional, value :: dim 
+      real, dimension(:), intent(in) :: query
+      type(kdnode), pointer, intent(inout) :: res
+      !real, dimension(:), intent(inout) :: res
+      real, intent(inout) :: distance
 
       ! Local Values
-      integer :: ndims
-      integer :: d
-      real :: best_distance, current_distance
+      real :: current_distance
 
-      ! Check to see if result and point have the at least the same dimensions?
-      ndims = size(kdtree % data, dim=1)
-
-      if ( .not. present(dim)) then
-         d = 0
-      else
-         d = dim
+      current_distance = sum((kdtree % point(:) - query(:))**2)
+      if (current_distance < distance) then
+         distance = current_distance
+         res => kdtree
       endif
 
-      d = mod(d, ndims) + 1
+      !
+      ! To find the nearest point, we first attempt to find the point in the same manner
+      ! as a single deminsion BST.
+      !
+      ! However, because we are looking for the nearest neighbor, then there might be
+      ! a possibility that the nearest neighbor is on the otherside of the tree.
+      !
+      ! Thus, to determine if we need to search the opposite child we just searched, we
+      ! will compare the distance of the current minimum distance, and the root node
+      ! that we branched off of.
+      !
+      ! If the distance to the root node, is less then the current minimum distance,
+      ! then the nearist neighbor might be in opposite child.
+      !
 
-      current_distance = sum( kdtree % data(:) - point(:) )**2
-      if ( current_distance < min_d ) then
-         !write(0,*) "min: ", min_d, "current_dist: ", current_distance
-         min_d = current_distance
-         result = kdtree % data(:) 
-         !write(0,*) "Result: ", result
+      ! TODO: Double precision calculations
+
+      if (query(kdtree % split_dim) > kdtree % point(kdtree % split_dim)) then
+         if (associated(kdtree % right)) then ! Search right
+            call mpas_kd_search_internal(kdtree % right, query, res, distance)
+         endif
+         if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .AND. associated(kdtree % left)) then 
+            call mpas_kd_search_internal(kdtree % left, query, res, distance)
+         endif
+      else if (query(kdtree % split_dim) < kdtree % point(kdtree % split_dim)) then 
+         if (associated(kdtree % left)) then ! Search left
+            call mpas_kd_search_internal(kdtree % left, query, res, distance)
+         endif
+         if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .AND. associated(kdtree % right)) then
+            call mpas_kd_search_internal(kdtree % right, query, res, distance)
+         endif
+      else ! Nearest point could be in either left or right subtree, so search both
+         if(associated(kdtree % right)) call mpas_kd_search_internal(kdtree % right, query, res, distance)
+         if(associated(kdtree % left)) call mpas_kd_search_internal(kdtree % left, query, res, distance)
       endif
 
-      if ( point(d) > kdtree % data(d) ) then
-         if ( associated( kdtree % right ) ) then ! Search Right
-            call mpas_kd_search(kdtree % right, point, result, min_d, d)
-         endif
-         if ( sum(point(:) - kdtree % data(:))**2 <= min_d .AND. associated(kdtree % left)) then 
-            call mpas_kd_search(kdtree % left, point, result, min_d, d)
-         endif
+   end subroutine mpas_kd_search_internal
 
-      else if ( point(d) < kdtree % data(d) ) then ! Search Left
-         if ( associated( kdtree % left) ) then
-            call mpas_kd_search(kdtree % left, point, result, min_d, d)
-         endif
-         if ( sum(point(:) - kdtree % data(:))**2 <= min_d .AND. associated(kdtree % right)) then
-            call mpas_kd_search(kdtree % right, point, result, min_d, d)
-         endif
+   !***********************************************************************
+   !
+   !  routine mpas_kd_search
+   !
+   !> \brief   Find the nearest neighbor within a KD-Tree
+   !> \author  Miles A. Curry 
+   !> \date    03/04/19
+   !> \details
+   !> Find `point` within `kdtree` and return the nearest neighbor (or the point)
+   !> within `result` return the distance in `min_d`.
+   !>
+   !
+   !-----------------------------------------------------------------------
+   subroutine mpas_kd_search(kdtree, query, res, distance)
 
-      else ! Go both
-         if(associated(kdtree % right)) call mpas_kd_search(kdtree % right, point, result, min_d, d)
-         if(associated(kdtree % left)) call mpas_kd_search(kdtree % left, point, result, min_d, d)
+      implicit none
+      type(kdnode), pointer, intent(in) :: kdtree
+      real, dimension(:), intent(in) :: query
+      type(kdnode), pointer, intent(inout) :: res
+      real, intent(out), optional :: distance
+
+      real :: dis
+
+      if (size(kdtree % point) /= size(query)) then
+         write(0,*) "ERROR: Searching a ", size(kdtree % point), "dimensional kdtree for a point that only"
+         write(0,*) "ERROR: ", size(query), " dimensions. Please supply a point of equal"
+         write(0,*) "ERROR: dimensions!"
+         return
+      endif
+
+      dis = huge(dis)
+      call mpas_kd_search_internal(kdtree, query, res, dis)
+
+      if(present(distance)) then
+         distance = dis
       endif
 
    end subroutine mpas_kd_search
 
-
-   recursive subroutine mpas_kd_find_min_internal(kdtree, point, dim, minimum, depth)
-
-      implicit none
-
-      type (kdnode), pointer :: kdtree
-      real, dimension(:), intent(inout) :: point
-      integer, intent(in) :: dim
-      real, dimension(:), intent(inout) :: minimum 
-      integer, optional, value :: depth
-
-      integer :: ndims
-      integer :: d
-
-      ndims = size(point)
-
-      if ( .NOT. present(depth)) then
-         d = 0
-      else
-         d = depth
-      endif
-
-      d = mod(d, ndims) + 1
-
-      ! Base Case
-      if (.NOT. associated(kdtree)) then
-         return
-      endif
-
-      if(kdtree % data(dim) < minimum(dim)) then
-         minimum(:) = kdtree % data(:)
-         point(:) = kdtree % data(:)
-      endif
-
-
-      ! If the current split dimension (d) is equal to the dimension we asked for (dim)
-      ! then we know that the smallest point in this dimension is within the left subtree
-      if ( d == dim ) then 
-         if ( associated(kdtree%left) ) then
-            call mpas_kd_find_min_internal(kdtree%left, point, dim, minimum, d)
-            return
-         endif
-      else 
-         call mpas_kd_find_min_internal(kdtree%left, point, dim, minimum, d)
-         call mpas_kd_find_min_internal(kdtree%right, point, dim, minimum, d)
-      endif
-
-      ! Else we do not know here the smallest value lies, so we must recursivly search both
-      ! subtrees.
-
-   end subroutine mpas_kd_find_min_internal
-
-   subroutine mpas_kd_find_min(kdtree, point, dim)
-      
-      implicit none
-
-      ! Input Variables
-      type (kdnode), pointer :: kdtree
-      real, dimension(:), intent(inout) :: point
-      integer, intent(in), value :: dim
-
-      ! Local variables
-      real, dimension(size(point)) :: minimum
-
-      minimum = huge(minimum)
-
-      call mpas_kd_find_min_internal(kdtree, point, dim, minimum)
-
-   end subroutine mpas_kd_find_min
-
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !! mpas_kd_remove
-   !!
-   !!
-   !!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   recursive function mpas_kd_remove(kdtree, point, dim) result(ierr)
-
-      implicit none
-      ! Input Variables
-      type (kdnode), pointer :: kdtree
-      real, dimension(:), intent(in) :: point
-      integer, optional, value :: dim
-
-      ! Return Value
-      real, dimension(size(point)) :: min_point
-      integer :: d
-      integer :: ndims
-      logical :: ierr
-
-      ndims = size(point)
-
-      if ( .not. present(dim)) then
-         d = 0
-      else
-         d = dim
-      endif
-
-      d = mod(d, ndims) + 1
-
-      ! If we have a leaf node, remove it trivially
-      if ( .NOT. associated(kdtree)) then
-         ierr = .FALSE.
-         return
-      endif
-
-      ! Check to see if our child nodes are the point .AND. are leaf nodes.
-      !  If one of them is, then deallocate it, and set the corrosponding pointer to NULL 
-      ! 
-
-      if( .not. associated(kdtree % left) .AND. .not. associated(kdtree % right)) then
-         if ( all(kdtree % data(:) == point(:) )) then
-            deallocate(kdtree % data)
-            deallocate(kdtree)
-            ierr = .TRUE.
-            return
-         endif
-      endif
-   
-      if( all(kdtree % data(:) == point(:)) ) then ! The current node equals the requested point
-
-         if ( associated(kdtree % right) ) then
-            ! Find the minimum on the right side - replace the current node with it
-            call mpas_kd_find_min(kdtree % right, min_point, d)
-            kdtree % data(:) = min_point(:) 
-            ! Call delete on the node that we found to be the minimum
-            if ( .NOT. mpas_kd_remove(kdtree % right, min_point, d) ) then
-               write(0,*) "We could not delete the replacement node on the right subtree!"
-               stop
-            endif
-            ierr = .TRUE.
-            return
-            
-         elseif ( associated(kdtree % left) ) then
-            ! Find the minimum on the left side - replace the current node with it
-            call mpas_kd_find_min(kdtree % left, min_point, d)
-            kdtree % data(:) = min_point(:) 
-
-            ! Call delete on the node that we found to be the minimum
-            if ( .NOT. mpas_kd_remove(kdtree % left, min_point, d) ) then
-               write(0,*) "We could not delete the replacement node on the left subtree!"
-               stop
-            endif
-            ierr = .TRUE.
-            return
-         endif
-      endif
-        
-
-      if (point(d) < kdtree % data(d) .AND. associated(kdtree % left)) then
-         if (mpas_kd_remove(kdtree % left, point, d)) then
-            ierr = .TRUE.
-            return
-         endif
-      endif
-      if (point(d) > kdtree % data(d) .AND. associated(kdtree % right)) then
-         if (mpas_kd_remove(kdtree % right, point, d)) then
-            ierr = .TRUE.
-            return
-         endif
-      endif
-
-   end function mpas_kd_remove
-
+   !***********************************************************************
+   !
+   !  routine mpas_kd_free
+   !
+   !> \brief   Free all nodes within a tree.
+   !> \author  Miles A. Curry
+   !> \date    03/04/19
+   !> \details
+   !> Recursivly deallocate all nodes within `kdtree` including `kdtree` itself.
+   !>
+   !-----------------------------------------------------------------------
    recursive subroutine mpas_kd_free(kdtree)
 
       implicit none
       type(kdnode), pointer :: kdtree
 
+      if (.not. associated(kdtree)) then
+         return
+      endif
 
       if (associated(kdtree % left)) then
          call mpas_kd_free(kdtree % left)
@@ -376,65 +269,41 @@ module mpas_kd_tree
          call mpas_kd_free(kdtree % right)
       endif
 
-      deallocate(kdtree % data)
-      deallocate(kdtree)
+      deallocate(kdtree % point)
 
    end subroutine mpas_kd_free
 
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! Sorts
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-   subroutine bubbleSort(array, dim)
-
-      implicit none
-      ! Input Variable
-      real, dimension(:,:), intent(inout) :: array
-      integer, value :: dim
-
-      ! Local Variable
-      real, dimension(size(array, dim=1)) :: swap
-      integer :: npoints
-      integer :: i, j, k
-
-      npoints = size(array, dim=2)
-
-      do i = 1, npoints, 1
-         k = i
-         do j = 1, npoints - k, 1
-            if(array(dim, j + 1) < array(dim, j)) then
-               swap = array(:, j)
-               array(:, j) = array(:, j + 1)
-               array(:, j + 1) = swap
-            endif
-         enddo
-      enddo
-
-   end subroutine bubbleSort
-
-   recursive subroutine quickSort(array, dim, arrayStart, arrayEnd)
+   !***********************************************************************
+   !
+   !  routine mpas_kd_quicksort
+   !
+   !> \brief   Sort an array along a dimension
+   !> \author  Miles A. Curry
+   !> \date    03/04/19
+   !> \details
+   !> Sort points starting from arrayStart, to arrayEnd along the given dimension
+   !> `dim`. If two points are swapped, the entire K-Coordinate point are swapped.
+   !
+   !-----------------------------------------------------------------------
+   recursive subroutine quickSort(array, dim, arrayStart, arrayEnd, ndims)
 
       implicit none
-      ! Input Variable
-      real, dimension(:,:) :: array
+
+      ! Input Variables
+      !real, dimension(:,:) :: array
+      type (kdnode), dimension(:) :: array
       integer, intent(in), value :: dim
       integer, intent(in), value :: arrayStart, arrayEnd
+      integer, intent(in) :: ndims
 
-      ! Local Variables 
-      integer :: ndims, npoints
-      real, dimension(size(array, dim=1)) :: temp
-      real, dimension(size(array, dim=1)) :: pivot_value
+      ! Local Variables
+      type (kdnode) :: temp
+      real, dimension(ndims) :: pivot_value
 
       integer :: l, r, pivot, s
 
-
-      ndims = size(array, dim=1)
-      npoints = arrayEnd
-
-      if ( (arrayEnd - arrayStart) < 1 ) then
+      if ((arrayEnd - arrayStart) < 1) then
          return
       endif
 
@@ -444,69 +313,56 @@ module mpas_kd_tree
       s = l
 
       pivot = (l+r)/2
-      pivot_value = array(:, pivot)
+      pivot_value = array(pivot) % point
 
       ! Move the pivot to the far right
-      temp(:) = array(:,pivot)
-      array(:,pivot) = array(:,arrayEnd)
-      array(:,arrayEnd) = temp(:)
+      temp = array(pivot)
+      array(pivot) = array(arrayEnd)
+      array(arrayEnd) = temp
 
       do while ( .TRUE. )
          ! Advance the left pointer until it is a value less then our pivot_value(dim)
-         do while ( array(dim, l) < pivot_value(dim) )
-            l = l + 1
+         do while ( .TRUE. )
+            if (array(l) % point(dim) < pivot_value(dim)) then
+               l = l + 1
+            else
+               exit
+            endif
          enddo
 
          ! Advance the right pointer until it is a value more then our pivot_value(dim)
-         do while ( r > 0 .AND. array(dim, r) > pivot_value(dim) )
-            r = r - 1
+         do while ( .TRUE. )
+            if ( r <= 0 ) then
+               exit
+            endif
+
+            if(array(r) % point(dim) >= pivot_value(dim)) then
+               r = r - 1
+            else
+               exit
+            endif
          enddo
 
-         ! l >= r so return and quicksort the left and right subtrees
          if ( l >= r ) then 
             exit
          else ! Swap elements about the pivot
-            temp = array(:,l)
-            array(:,l) = array(:,r)
-            array(:,r) = temp
+            temp = array(l)
+            array(l) = array(r)
+            array(r) = temp
          endif
       enddo
 
-      ! Move the pivot to where the l ended up
-      temp(:) = array(:,l)
-      array(:,l) = array(:,arrayEnd)
-      array(:,arrayEnd) = temp(:)
+      ! Move the pivot to l ended up
+      temp = array(l)
+      array(l) = array(arrayEnd)
+      array(arrayEnd) = temp
 
       !Quick Sort on the lower partition
-      call quickSort(array(:,:), dim, s, l-1)
-      
+      call quickSort(array(:), dim, s, l-1, ndims)
+
       !Quick sort on the upper partition
-      call quickSort(array(:,:), dim, l+1, arrayEnd)
+      call quickSort(array(:), dim, l+1, arrayEnd, ndims)
 
    end subroutine quicksort
-
-   subroutine insertionSort(array, dim, startArray, endArray)
-
-      implicit none
-
-      real, dimension(:,:), intent(inout) :: array
-      integer, intent(in), value :: dim
-      integer, intent(in), value :: startArray
-      integer, intent(in), value :: endArray
-
-      real, dimension(dim) :: temp
-      integer :: i, j
-
-      do i = startArray, endArray, 1
-         do j = startArray, endArray, 1
-            if ( array(dim, i) > array(dim, j) ) then
-               temp(:) = array(:,i)
-               array(:,i) = array(:,j)
-               array(:,j) = temp(:)
-            endif
-         enddo
-      enddo
-
-   end subroutine insertionSort
 
 end module mpas_kd_tree
