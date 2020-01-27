@@ -1,29 +1,26 @@
-ifeq ($(FC),gfortran)
-	FFLAGS= -fdefault-real-8 -fdefault-double-8
-	#FFLAGS= -g 
-endif
+default:
+	@echo "Please provide a compiler name (gnu, intel, pgi)"
+	exit 1
 
-ifeq ($(FC),ifort)
-	FFLAGS= -g -fcheck=all
-endif
+gnu:
+	( $(MAKE) kdtree \
+	 "FC = gfortran" \
+	 "FFLAGS = -g -Wall -fcheck=all -pedantic -std=f2003 -fbacktrace")
 
-OMP = -fopenmp
+intel:
+	( $(MAKE) kdtree \
+	 "FC = ifort " \
+	 "FFLAGS = -g -warn all -check all -traceback" )
 
-default: all
+pgi:
+	( $(MAKE) kdtree \
+	 "FC = pgfortran" \
+	 "FFLAGS = -g -Mbounds -Mchkptr -traceback" )
 
-all: cspeed getoptf mpas_kd_tree runner
 
-cspeed: cspeed.c
-	gcc -c cspeed.c
-
-getoptf: getoptf.f90
-	$(FC) $(FFLAGS) -c getoptf.f90
-
-mpas_kd_tree: mpas_kd_tree.f90
-	$(FC) $(FFLAGS) -c mpas_kd_tree.f90
-
-runner: runner.f90 mpas_kd_tree.o getoptf.o cspeed.o
-	$(FC) $(FFLAGS) -o mpas_kd_tests runner.f90 getoptf.o mpas_kd_tree.o cspeed.o
+kdtree:
+	$(FC) $(FFLAGS) -c mpas_kd_tree.F90
+	$(FC) $(FFLAGS) -o test_kd_tree mpas_kd_tree_tests.F90 mpas_kd_tree.o
 
 clean:
-	rm -rf *.mod *.o mpas_kd_tests
+	rm -rf *.o *.mod test_kd_tree

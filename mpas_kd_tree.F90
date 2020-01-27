@@ -21,12 +21,18 @@ module mpas_kd_tree
    public :: mpas_kd_search
    public :: mpas_kd_free
 
+#ifdef SINGLE_PRECISION
+   integer, parameter :: RKIND = selected_real_kind(6)
+#else
+   integer, parameter :: RKIND = selected_real_kind(12)
+#endif
+
    type kdnode
       type (kdnode), pointer :: left => null()
       type (kdnode), pointer :: right => null()
 
       integer :: split_dim
-      real, dimension(:), pointer :: point => null()
+      real(kind=RKIND), dimension(:), pointer :: point => null()
 
       integer :: cell
    end type kdnode
@@ -79,9 +85,14 @@ module mpas_kd_tree
 
       ! Build the right and left sub-trees but do not include the
       ! node that was just allocated (i.e. points(:, median))
-      points(median)%left => mpas_kd_construct_internal(points(1:median-1), ndims, median - 1, points(median) % split_dim)
-      points(median)%right => mpas_kd_construct_internal(points(median+1:npoints), ndims, npoints - median, points(median) &
+
+      !write(0,*) "2. Points: ", size(points), "median", median, "npoints", npoints
+
+      if (npoints /= 1) then
+          points(median)%left => mpas_kd_construct_internal(points(1:median-1), ndims, median - 1, points(median) % split_dim)
+          points(median)%right => mpas_kd_construct_internal(points(median+1:npoints), ndims, npoints - median, points(median) &
                                                                                                                      % split_dim)
+      endif
 
    end function mpas_kd_construct_internal
 
@@ -150,13 +161,13 @@ module mpas_kd_tree
 
       ! Input Variables
       type(kdnode), pointer, intent(in) :: kdtree
-      real, dimension(:), intent(in) :: query
+      real(kind=RKIND), dimension(:), intent(in) :: query
       type(kdnode), pointer, intent(inout) :: res
       !real, dimension(:), intent(inout) :: res
-      real, intent(inout) :: distance
+      real(kind=RKIND), intent(inout) :: distance
 
       ! Local Values
-      real :: current_distance
+      real(kind=RKIND) :: current_distance
 
       current_distance = sum((kdtree % point(:) - query(:))**2)
       if (current_distance < distance) then
@@ -219,11 +230,11 @@ module mpas_kd_tree
 
       implicit none
       type(kdnode), pointer, intent(in) :: kdtree
-      real, dimension(:), intent(in) :: query
+      real(kind=RKIND), dimension(:), intent(in) :: query
       type(kdnode), pointer, intent(inout) :: res
-      real, intent(out), optional :: distance
+      real(kind=RKIND), intent(out), optional :: distance
 
-      real :: dis
+      real(kind=RKIND) :: dis
 
       if (size(kdtree % point) /= size(query)) then
          write(0,*) "ERROR: Searching a ", size(kdtree % point), "dimensional kdtree for a point that only"
@@ -270,6 +281,7 @@ module mpas_kd_tree
       endif
 
       deallocate(kdtree % point)
+      nullify(kdtree)
 
    end subroutine mpas_kd_free
 
@@ -299,7 +311,7 @@ module mpas_kd_tree
 
       ! Local Variables
       type (kdnode) :: temp
-      real, dimension(ndims) :: pivot_value
+      real(kind=RKIND), dimension(ndims) :: pivot_value
 
       integer :: l, r, pivot, s
 
