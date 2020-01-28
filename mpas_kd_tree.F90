@@ -7,19 +7,19 @@ module mpas_kd_tree
    !> \brief   MPAS KD-Tree module
    !> \author  Miles A. Curry
    !> \date    03/04/19
-   !> \details
    !
    !-----------------------------------------------------------------------
    implicit none
 
    private
 
-   public :: kdnode
+   public :: mpas_kd_type
 
    ! Public Subroutines
    public :: mpas_kd_construct
    public :: mpas_kd_search
    public :: mpas_kd_free
+   public :: quickSort
 
 #ifdef SINGLE_PRECISION
    integer, parameter :: RKIND = selected_real_kind(6)
@@ -27,15 +27,15 @@ module mpas_kd_tree
    integer, parameter :: RKIND = selected_real_kind(12)
 #endif
 
-   type kdnode
-      type (kdnode), pointer :: left => null()
-      type (kdnode), pointer :: right => null()
+   type mpas_kd_type
+      type (mpas_kd_type), pointer :: left => null()
+      type (mpas_kd_type), pointer :: right => null()
 
       integer :: split_dim
       real(kind=RKIND), dimension(:), pointer :: point => null()
 
-      integer :: cell
-   end type kdnode
+      integer :: id 
+   end type mpas_kd_type
 
    contains
 
@@ -48,23 +48,29 @@ module mpas_kd_tree
    !> \author  Miles A. Curry
    !> \date    03/04/19
    !> \details
-   !> Recursive function for mpas_kd_construct. See mpas_kd_construct for
-   !> more information.
+   !> Private, recursive function to construct a KD-Tree from an array
+   !> of mpas_kd_type, points, and return the root of the tree.
+   !>
+   !> ndims should be the dimensioned of each individual point found 
+   !> in points and npoints should be the number of points. dim represents
+   !> the current split dimensioned and is used internally. Upon calling
+   !> this function, dim should always be set to 0.
+   !>
+   !> 
    !
    !-----------------------------------------------------------------------
    recursive function mpas_kd_construct_internal(points, ndims, npoints, dim) result(tree)
 
       implicit none
 
-      ! Input Varaibles
-      !real, dimension(:,:) :: points
-      type (kdnode), dimension(:), target :: points
+      ! Input Variables
+      type (mpas_kd_type), dimension(:), target :: points
       integer, intent(in) :: ndims
       integer, value :: npoints
       integer, value :: dim
 
       ! Return Value
-      type (kdnode), pointer :: tree
+      type (mpas_kd_type), pointer :: tree
 
       ! Local Variables
       integer :: median
@@ -83,15 +89,12 @@ module mpas_kd_tree
       points(median) % split_dim = dim
       tree => points(median)
 
-      ! Build the right and left sub-trees but do not include the
-      ! node that was just allocated (i.e. points(:, median))
-
-      !write(0,*) "2. Points: ", size(points), "median", median, "npoints", npoints
-
+      ! Build the right and left sub-trees but do not include the median 
+      ! point (the root of the current tree) 
       if (npoints /= 1) then
           points(median)%left => mpas_kd_construct_internal(points(1:median-1), ndims, median - 1, points(median) % split_dim)
-          points(median)%right => mpas_kd_construct_internal(points(median+1:npoints), ndims, npoints - median, points(median) &
-                                                                                                                     % split_dim)
+          points(median)%right => mpas_kd_construct_internal(points(median+1:npoints), ndims, npoints - median, &
+                                                                                             points(median) % split_dim)
       endif
 
    end function mpas_kd_construct_internal
@@ -101,17 +104,16 @@ module mpas_kd_tree
    !
    !  routine mpas_kd_construct
    !
-   !> \brief   Create a KD-Tree from a set of k-Dimensional points
+   !> \brief   Construct a balanced KD-Tree
    !> \author  Miles A. Curry
    !> \date    03/04/19
    !> \details
-   !> This routine creates a balanced KD-Tree from a set of K-dimensional 
-   !> points via quicksort and it returns a pointer to the root node of that
-   !> tree. The points dummy argument, should be an array with the dimensions
-   !> defined as: `points(k, n)` with k being the number of dimensions, and n
-   !> being the number of points.
-   !>
-   !> tree => mpas_kd_construct(points)
+   !> Create and return a perfectly balanced KD-Tree from an array of 
+   !> mpas_kd_type, points. The point member of every element of the points 
+   !> array should be allocated and set to the points desired to the KD-Tree,
+   !> and ndims should be the dimensions of the points.
+   !> 
+   !> Upon error, the returned tree will be unassociated.
    !
    !-----------------------------------------------------------------------
    function mpas_kd_construct(points, ndims) result(tree)
@@ -119,12 +121,11 @@ module mpas_kd_tree
       implicit none
 
       ! Input Varaibles
-      !real, dimension(:,:) :: points
-      type (kdnode), dimension(:) :: points
+      type (mpas_kd_type), dimension(:) :: points
       integer, intent(in) :: ndims
 
       ! Return Value
-      type (kdnode), pointer :: tree
+      type (mpas_kd_type), pointer :: tree
 
       ! Local Varaibles
       integer :: npoints
@@ -132,8 +133,6 @@ module mpas_kd_tree
       npoints = size(points)
       
       if(npoints < 1) then
-         ! No points were passed in, return null
-         write(0,*) "ERROR: mpas_kd_tree - No points were passed in to construct!"
          tree => null()
          return
       endif
@@ -147,12 +146,16 @@ module mpas_kd_tree
    !
    !  recursive routine mpas_kd_search_internal
    !
-   !> \brief   Find the nearest neighbor within a KD-Tree
+   !> \brief   Recursively search the KD-Tree for query
    !> \author  Miles A. Curry
    !> \date    03/04/19
    !> \details
-   !> Recursive subroutine for mpas_kd_search. See mpas_kd_search for more
-   !> information.
+   !> Private, recursive function to search kdtree for query. Upon succes
+   !> res will point to the nearest neighbor to query and distance will hold
+   !> the squared distance between query and res.
+   !>
+   !> Distance is calculated and compared as squared distance to increase
+   !> efficiency.
    !
    !-----------------------------------------------------------------------
    recursive subroutine mpas_kd_search_internal(kdtree, query, res, distance)
@@ -160,10 +163,9 @@ module mpas_kd_tree
       implicit none
 
       ! Input Variables
-      type(kdnode), pointer, intent(in) :: kdtree
+      type(mpas_kd_type), pointer, intent(in) :: kdtree
       real(kind=RKIND), dimension(:), intent(in) :: query
-      type(kdnode), pointer, intent(inout) :: res
-      !real, dimension(:), intent(inout) :: res
+      type(mpas_kd_type), pointer, intent(inout) :: res
       real(kind=RKIND), intent(inout) :: distance
 
       ! Local Values
@@ -175,36 +177,29 @@ module mpas_kd_tree
          res => kdtree
       endif
 
+      ! 
+      ! To find the nearest neighbor, first serach the tree in a similar manner
+      ! as a single dimensioned BST, by comparing points on the current split
+      ! dimension.
       !
-      ! To find the nearest point, we first attempt to find the point in the same manner
-      ! as a single deminsion BST.
+      ! If the distance between the current node and the query is less then the 
+      ! minimum distance found within the subtree we just searched, then the nearest
+      ! neighbor might be in the opposite subtree, so search it.
       !
-      ! However, because we are looking for the nearest neighbor, then there might be
-      ! a possibility that the nearest neighbor is on the otherside of the tree.
-      !
-      ! Thus, to determine if we need to search the opposite child we just searched, we
-      ! will compare the distance of the current minimum distance, and the root node
-      ! that we branched off of.
-      !
-      ! If the distance to the root node, is less then the current minimum distance,
-      ! then the nearist neighbor might be in opposite child.
-      !
-
-      ! TODO: Double precision calculations
 
       if (query(kdtree % split_dim) > kdtree % point(kdtree % split_dim)) then
          if (associated(kdtree % right)) then ! Search right
             call mpas_kd_search_internal(kdtree % right, query, res, distance)
          endif
          if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .AND. associated(kdtree % left)) then 
-            call mpas_kd_search_internal(kdtree % left, query, res, distance)
+            call mpas_kd_search_internal(kdtree % left, query, res, distance) ! Check the other subtree
          endif
       else if (query(kdtree % split_dim) < kdtree % point(kdtree % split_dim)) then 
          if (associated(kdtree % left)) then ! Search left
             call mpas_kd_search_internal(kdtree % left, query, res, distance)
          endif
          if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .AND. associated(kdtree % right)) then
-            call mpas_kd_search_internal(kdtree % right, query, res, distance)
+            call mpas_kd_search_internal(kdtree % right, query, res, distance) ! Check the other subtree
          endif
       else ! Nearest point could be in either left or right subtree, so search both
          if(associated(kdtree % right)) call mpas_kd_search_internal(kdtree % right, query, res, distance)
@@ -217,29 +212,30 @@ module mpas_kd_tree
    !
    !  routine mpas_kd_search
    !
-   !> \brief   Find the nearest neighbor within a KD-Tree
+   !> \brief   
    !> \author  Miles A. Curry 
    !> \date    03/04/19
    !> \details
-   !> Find `point` within `kdtree` and return the nearest neighbor (or the point)
-   !> within `result` return the distance in `min_d`.
+   !> Search kdtree and returned the nearest point to query into the 
+   !> res argument. Optionally, if distance is present, returned the 
+   !> squared distance between query and res.
    !>
+   !> If the dimension of query does not match the dimensions of points
+   !> within kdtree, then res will be returned as unassociated.
    !
    !-----------------------------------------------------------------------
    subroutine mpas_kd_search(kdtree, query, res, distance)
 
       implicit none
-      type(kdnode), pointer, intent(in) :: kdtree
+      type(mpas_kd_type), pointer, intent(in) :: kdtree
       real(kind=RKIND), dimension(:), intent(in) :: query
-      type(kdnode), pointer, intent(inout) :: res
+      type(mpas_kd_type), pointer, intent(inout) :: res
       real(kind=RKIND), intent(out), optional :: distance
 
       real(kind=RKIND) :: dis
 
       if (size(kdtree % point) /= size(query)) then
-         write(0,*) "ERROR: Searching a ", size(kdtree % point), "dimensional kdtree for a point that only"
-         write(0,*) "ERROR: ", size(query), " dimensions. Please supply a point of equal"
-         write(0,*) "ERROR: dimensions!"
+         res => null()
          return
       endif
 
@@ -260,13 +256,13 @@ module mpas_kd_tree
    !> \author  Miles A. Curry
    !> \date    03/04/19
    !> \details
-   !> Recursivly deallocate all nodes within `kdtree` including `kdtree` itself.
-   !>
+   !> Recursively deallocate all nodes within `kdtree` including `kdtree` itself.
+   !> 
    !-----------------------------------------------------------------------
    recursive subroutine mpas_kd_free(kdtree)
 
       implicit none
-      type(kdnode), pointer :: kdtree
+      type(mpas_kd_type), pointer :: kdtree
 
       if (.not. associated(kdtree)) then
          return
@@ -303,14 +299,13 @@ module mpas_kd_tree
       implicit none
 
       ! Input Variables
-      !real, dimension(:,:) :: array
-      type (kdnode), dimension(:) :: array
+      type (mpas_kd_type), dimension(:) :: array
       integer, intent(in), value :: dim
       integer, intent(in), value :: arrayStart, arrayEnd
       integer, intent(in) :: ndims
 
       ! Local Variables
-      type (kdnode) :: temp
+      type (mpas_kd_type) :: temp
       real(kind=RKIND), dimension(ndims) :: pivot_value
 
       integer :: l, r, pivot, s
