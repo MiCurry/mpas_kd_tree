@@ -277,6 +277,8 @@ module mpas_kd_tree
       endif
 
       deallocate(kdtree % point)
+      nullify(kdtree % left)
+      nullify(kdtree % right)
       nullify(kdtree)
 
    end subroutine mpas_kd_free
