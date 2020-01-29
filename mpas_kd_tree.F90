@@ -1,12 +1,32 @@
 module mpas_kd_tree
-    
+
    !***********************************************************************
    !
    !  module mpas_kd_tree
    !
    !> \brief   MPAS KD-Tree module
    !> \author  Miles A. Curry
-   !> \date    03/04/19
+   !> \date    01/28/20
+   !> A KD-Tree implementation to create and search perfectly balanced
+   !> KD-Trees.
+   !>
+   !> Use `mpas_kd_type` dervied type to construct points for mpas_kd_construct:
+   !>
+   !> real, dimension(:,:), allocatable :: array
+   !> type (mpas_kd_tree), pointer :: tree => null()
+   !> type (mpas_kd_tree), dimension(:), pointer :: points => null()
+   !>
+   !> allocate(array(k,n)) ! K dims and n points
+   !> allocate(points(n))
+   !> array(:,:) = (/.../)  ! Fill array with values
+   !>
+   !> do i = 0, n
+   !>    allocate(points(i) % point(k))    ! Allocate point with k dimensions
+   !>    points(i) % point(:) = array(:,i)
+   !>    points(i) % id = i                ! Or a value of your choice
+   !> enddo
+   !>
+   !> tree => mpas_kd_construct(points, k)
    !
    !-----------------------------------------------------------------------
    implicit none
@@ -34,29 +54,26 @@ module mpas_kd_tree
       integer :: split_dim
       real(kind=RKIND), dimension(:), pointer :: point => null()
 
-      integer :: id 
+      integer :: id
    end type mpas_kd_type
 
    contains
 
-
    !***********************************************************************
    !
-   !  recusrive routine mpas_kd_construct_internal
+   !  recursive routine mpas_kd_construct_internal
    !
    !> \brief   Create a KD-Tree from a set of k-Dimensional points
    !> \author  Miles A. Curry
-   !> \date    03/04/19
+   !> \date    01/28/20
    !> \details
    !> Private, recursive function to construct a KD-Tree from an array
    !> of mpas_kd_type, points, and return the root of the tree.
    !>
-   !> ndims should be the dimensioned of each individual point found 
+   !> ndims should be the dimensioned of each individual point found
    !> in points and npoints should be the number of points. dim represents
    !> the current split dimensioned and is used internally. Upon calling
    !> this function, dim should always be set to 0.
-   !>
-   !> 
    !
    !-----------------------------------------------------------------------
    recursive function mpas_kd_construct_internal(points, ndims, npoints, dim) result(tree)
@@ -89,8 +106,8 @@ module mpas_kd_tree
       points(median) % split_dim = dim
       tree => points(median)
 
-      ! Build the right and left sub-trees but do not include the median 
-      ! point (the root of the current tree) 
+      ! Build the right and left sub-trees but do not include the median
+      ! point (the root of the current tree)
       if (npoints /= 1) then
           points(median)%left => mpas_kd_construct_internal(points(1:median-1), ndims, median - 1, points(median) % split_dim)
           points(median)%right => mpas_kd_construct_internal(points(median+1:npoints), ndims, npoints - median, &
@@ -106,13 +123,13 @@ module mpas_kd_tree
    !
    !> \brief   Construct a balanced KD-Tree
    !> \author  Miles A. Curry
-   !> \date    03/04/19
+   !> \date    01/28/20
    !> \details
-   !> Create and return a perfectly balanced KD-Tree from an array of 
-   !> mpas_kd_type, points. The point member of every element of the points 
+   !> Create and return a perfectly balanced KD-Tree from an array of
+   !> mpas_kd_type, points. The point member of every element of the points
    !> array should be allocated and set to the points desired to the KD-Tree,
    !> and ndims should be the dimensions of the points.
-   !> 
+   !>
    !> Upon error, the returned tree will be unassociated.
    !
    !-----------------------------------------------------------------------
@@ -131,7 +148,7 @@ module mpas_kd_tree
       integer :: npoints
 
       npoints = size(points)
-      
+
       if(npoints < 1) then
          tree => null()
          return
@@ -148,7 +165,7 @@ module mpas_kd_tree
    !
    !> \brief   Recursively search the KD-Tree for query
    !> \author  Miles A. Curry
-   !> \date    03/04/19
+   !> \date    01/28/20
    !> \details
    !> Private, recursive function to search kdtree for query. Upon succes
    !> res will point to the nearest neighbor to query and distance will hold
@@ -177,12 +194,12 @@ module mpas_kd_tree
          res => kdtree
       endif
 
-      ! 
+      !
       ! To find the nearest neighbor, first serach the tree in a similar manner
       ! as a single dimensioned BST, by comparing points on the current split
       ! dimension.
       !
-      ! If the distance between the current node and the query is less then the 
+      ! If the distance between the current node and the query is less then the
       ! minimum distance found within the subtree we just searched, then the nearest
       ! neighbor might be in the opposite subtree, so search it.
       !
@@ -191,10 +208,10 @@ module mpas_kd_tree
          if (associated(kdtree % right)) then ! Search right
             call mpas_kd_search_internal(kdtree % right, query, res, distance)
          endif
-         if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .AND. associated(kdtree % left)) then 
+         if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .AND. associated(kdtree % left)) then
             call mpas_kd_search_internal(kdtree % left, query, res, distance) ! Check the other subtree
          endif
-      else if (query(kdtree % split_dim) < kdtree % point(kdtree % split_dim)) then 
+      else if (query(kdtree % split_dim) < kdtree % point(kdtree % split_dim)) then
          if (associated(kdtree % left)) then ! Search left
             call mpas_kd_search_internal(kdtree % left, query, res, distance)
          endif
@@ -212,12 +229,12 @@ module mpas_kd_tree
    !
    !  routine mpas_kd_search
    !
-   !> \brief   
-   !> \author  Miles A. Curry 
-   !> \date    03/04/19
+   !> \brief   Find the nearest point in a KD-Tree to a query
+   !> \author  Miles A. Curry
+   !> \date    01/28/20
    !> \details
-   !> Search kdtree and returned the nearest point to query into the 
-   !> res argument. Optionally, if distance is present, returned the 
+   !> Search kdtree and returned the nearest point to query into the
+   !> res argument. Optionally, if distance is present, returned the
    !> squared distance between query and res.
    !>
    !> If the dimension of query does not match the dimensions of points
@@ -254,10 +271,15 @@ module mpas_kd_tree
    !
    !> \brief   Free all nodes within a tree.
    !> \author  Miles A. Curry
-   !> \date    03/04/19
+   !> \date    01/28/20
    !> \details
-   !> Recursively deallocate all nodes within `kdtree` including `kdtree` itself.
-   !> 
+   !> Deallocate and nullify all point nodes of kdtree and nullify the
+   !> left and right pointers.
+   !>
+   !> After calling this function, the array of mpas_kd_type that was used
+   !> to construct kdtree will still be allocated and will need to be
+   !> deallocated separate from this routine.
+   !
    !-----------------------------------------------------------------------
    recursive subroutine mpas_kd_free(kdtree)
 
@@ -290,7 +312,7 @@ module mpas_kd_tree
    !
    !> \brief   Sort an array along a dimension
    !> \author  Miles A. Curry
-   !> \date    03/04/19
+   !> \date    01/28/20
    !> \details
    !> Sort points starting from arrayStart, to arrayEnd along the given dimension
    !> `dim`. If two points are swapped, the entire K-Coordinate point are swapped.
@@ -352,7 +374,7 @@ module mpas_kd_tree
             endif
          enddo
 
-         if ( l >= r ) then 
+         if ( l >= r ) then
             exit
          else ! Swap elements about the pivot
             temp = array(l)
@@ -366,10 +388,10 @@ module mpas_kd_tree
       array(l) = array(arrayEnd)
       array(arrayEnd) = temp
 
-      !Quick Sort on the lower partition
+      ! Quick Sort on the lower partition
       call quickSort(array(:), dim, s, l-1, ndims)
 
-      !Quick sort on the upper partition
+      ! Quick sort on the upper partition
       call quickSort(array(:), dim, l+1, arrayEnd, ndims)
 
    end subroutine quicksort
