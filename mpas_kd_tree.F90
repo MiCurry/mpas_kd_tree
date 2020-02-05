@@ -12,21 +12,25 @@ module mpas_kd_tree
    !>
    !> Use `mpas_kd_type` dervied type to construct points for mpas_kd_construct:
    !>
-   !> real, dimension(:,:), allocatable :: array
-   !> type (mpas_kd_tree), pointer :: tree => null()
-   !> type (mpas_kd_tree), dimension(:), pointer :: points => null()
+   !> real (kind=RKIND), dimension(:,:), allocatable :: array
+   !> type (mpas_kd_type), pointer :: tree => null()
+   !> type (mpas_kd_type), dimension(:), pointer :: points => null()
    !>
    !> allocate(array(k,n)) ! K dims and n points
    !> allocate(points(n))
    !> array(:,:) = (/.../)  ! Fill array with values
    !>
-   !> do i = 0, n
+   !> do i = 1, n
    !>    allocate(points(i) % point(k))    ! Allocate point with k dimensions
    !>    points(i) % point(:) = array(:,i)
    !>    points(i) % id = i                ! Or a value of your choice
    !> enddo
    !>
    !> tree => mpas_kd_construct(points, k)
+   !>
+   !> call mpas_kd_free(tree)
+   !> deallocate(points)
+   !>
    !
    !-----------------------------------------------------------------------
    implicit none
@@ -52,7 +56,7 @@ module mpas_kd_tree
       type (mpas_kd_type), pointer :: right => null()
 
       integer :: split_dim
-      real(kind=RKIND), dimension(:), pointer :: point => null()
+      real (kind=RKIND), dimension(:), pointer :: point => null()
 
       integer :: id
    end type mpas_kd_type
@@ -109,8 +113,8 @@ module mpas_kd_tree
       ! Build the right and left sub-trees but do not include the median
       ! point (the root of the current tree)
       if (npoints /= 1) then
-          points(median)%left => mpas_kd_construct_internal(points(1:median-1), ndims, median - 1, points(median) % split_dim)
-          points(median)%right => mpas_kd_construct_internal(points(median+1:npoints), ndims, npoints - median, &
+          points(median) % left => mpas_kd_construct_internal(points(1:median-1), ndims, median - 1, points(median) % split_dim)
+          points(median) % right => mpas_kd_construct_internal(points(median+1:npoints), ndims, npoints - median, &
                                                                                              points(median) % split_dim)
       endif
 
@@ -149,7 +153,7 @@ module mpas_kd_tree
 
       npoints = size(points)
 
-      if(npoints < 1) then
+      if (npoints < 1) then
          tree => null()
          return
       endif
@@ -180,13 +184,13 @@ module mpas_kd_tree
       implicit none
 
       ! Input Variables
-      type(mpas_kd_type), pointer, intent(in) :: kdtree
-      real(kind=RKIND), dimension(:), intent(in) :: query
-      type(mpas_kd_type), pointer, intent(inout) :: res
-      real(kind=RKIND), intent(inout) :: distance
+      type (mpas_kd_type), pointer, intent(in) :: kdtree
+      real (kind=RKIND), dimension(:), intent(in) :: query
+      type (mpas_kd_type), pointer, intent(inout) :: res
+      real (kind=RKIND), intent(inout) :: distance
 
       ! Local Values
-      real(kind=RKIND) :: current_distance
+      real (kind=RKIND) :: current_distance
 
       current_distance = sum((kdtree % point(:) - query(:))**2)
       if (current_distance < distance) then
@@ -208,19 +212,23 @@ module mpas_kd_tree
          if (associated(kdtree % right)) then ! Search right
             call mpas_kd_search_internal(kdtree % right, query, res, distance)
          endif
-         if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .AND. associated(kdtree % left)) then
+         if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .and. associated(kdtree % left)) then
             call mpas_kd_search_internal(kdtree % left, query, res, distance) ! Check the other subtree
          endif
       else if (query(kdtree % split_dim) < kdtree % point(kdtree % split_dim)) then
          if (associated(kdtree % left)) then ! Search left
             call mpas_kd_search_internal(kdtree % left, query, res, distance)
          endif
-         if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .AND. associated(kdtree % right)) then
+         if ((kdtree % point(kdtree % split_dim) - query(kdtree % split_dim))**2 <= distance .and. associated(kdtree % right)) then
             call mpas_kd_search_internal(kdtree % right, query, res, distance) ! Check the other subtree
          endif
       else ! Nearest point could be in either left or right subtree, so search both
-         if(associated(kdtree % right)) call mpas_kd_search_internal(kdtree % right, query, res, distance)
-         if(associated(kdtree % left)) call mpas_kd_search_internal(kdtree % left, query, res, distance)
+         if (associated(kdtree % right)) then
+            call mpas_kd_search_internal(kdtree % right, query, res, distance)
+         endif
+         if (associated(kdtree % left)) then
+            call mpas_kd_search_internal(kdtree % left, query, res, distance)
+         endif
       endif
 
    end subroutine mpas_kd_search_internal
@@ -244,12 +252,12 @@ module mpas_kd_tree
    subroutine mpas_kd_search(kdtree, query, res, distance)
 
       implicit none
-      type(mpas_kd_type), pointer, intent(in) :: kdtree
-      real(kind=RKIND), dimension(:), intent(in) :: query
-      type(mpas_kd_type), pointer, intent(inout) :: res
-      real(kind=RKIND), intent(out), optional :: distance
+      type (mpas_kd_type), pointer, intent(in) :: kdtree
+      real (kind=RKIND), dimension(:), intent(in) :: query
+      type (mpas_kd_type), pointer, intent(inout) :: res
+      real (kind=RKIND), intent(out), optional :: distance
 
-      real(kind=RKIND) :: dis
+      real (kind=RKIND) :: dis
 
       if (size(kdtree % point) /= size(query)) then
          res => null()
@@ -259,7 +267,7 @@ module mpas_kd_tree
       dis = huge(dis)
       call mpas_kd_search_internal(kdtree, query, res, dis)
 
-      if(present(distance)) then
+      if (present(distance)) then
          distance = dis
       endif
 
@@ -284,7 +292,7 @@ module mpas_kd_tree
    recursive subroutine mpas_kd_free(kdtree)
 
       implicit none
-      type(mpas_kd_type), pointer :: kdtree
+      type (mpas_kd_type), pointer :: kdtree
 
       if (.not. associated(kdtree)) then
          return
@@ -330,7 +338,7 @@ module mpas_kd_tree
 
       ! Local Variables
       type (mpas_kd_type) :: temp
-      real(kind=RKIND), dimension(ndims) :: pivot_value
+      real (kind=RKIND), dimension(ndims) :: pivot_value
 
       integer :: l, r, pivot, s
 
@@ -351,9 +359,9 @@ module mpas_kd_tree
       array(pivot) = array(arrayEnd)
       array(arrayEnd) = temp
 
-      do while ( .TRUE. )
+      do while (.true.)
          ! Advance the left pointer until it is a value less then our pivot_value(dim)
-         do while ( .TRUE. )
+         do while (.true.)
             if (array(l) % point(dim) < pivot_value(dim)) then
                l = l + 1
             else
@@ -362,8 +370,8 @@ module mpas_kd_tree
          enddo
 
          ! Advance the right pointer until it is a value more then our pivot_value(dim)
-         do while ( .TRUE. )
-            if ( r <= 0 ) then
+         do while (.true.)
+            if (r <= 0) then
                exit
             endif
 
@@ -374,7 +382,7 @@ module mpas_kd_tree
             endif
          enddo
 
-         if ( l >= r ) then
+         if (l >= r) then
             exit
          else ! Swap elements about the pivot
             temp = array(l)
